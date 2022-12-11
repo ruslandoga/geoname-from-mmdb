@@ -6,6 +6,7 @@ defmodule M.MixProject do
       app: :mmdb,
       version: "0.1.0",
       elixir: "~> 1.14",
+      elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
@@ -18,11 +19,19 @@ defmodule M.MixProject do
     ]
   end
 
+  # Specifies which paths to compile per environment.
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(:bench), do: ["lib", "bench/support"]
+  defp elixirc_paths(:dev), do: ["lib", "dev"]
+  defp elixirc_paths(_env), do: ["lib"]
+
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      # {:dep_from_hexpm, "~> 0.3.0"},
-      # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
+      {:rexbug, "~> 1.0", only: :dev},
+      {:benchee, "~> 1.1", only: :bench},
+      {:mmdb2_decoder, "~> 3.0", only: [:dev, :bench]},
+      {:locus, "~> 2.3", only: [:dev, :bench]}
     ]
   end
 end
