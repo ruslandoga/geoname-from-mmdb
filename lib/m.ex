@@ -318,4 +318,38 @@ defmodule M do
     <<value::size(size)-integer-unsigned, rest::bytes>> = rest
     {value, rest}
   end
+
+  require Logger
+
+  def list_geonames(data) do
+    offsets = find_pointers(data, 0)
+
+    Enum.reduce(offsets, %{}, fn offset, acc ->
+      try do
+        geoname_id = lookup_pointer(data, offset + 2)
+        _info = lookup_pointer(data, offset - 1)
+        Map.put(acc, geoname_id, offset - 1)
+      rescue
+        _ ->
+          Logger.error("failed to lookup pointer at #{offset}")
+          acc
+      end
+    end)
+  end
+
+  def find_pointers(<<1::3, 0::2, 20::11, rest::bytes>>, offset) do
+    [offset | find_pointers(rest, offset + 2)]
+  end
+
+  def find_pointers(<<_, rest::bytes>>, offset) do
+    find_pointers(rest, offset + 1)
+  end
+
+  def find_pointers(<<>>, _offset), do: []
+
+  def lookup_geoname(geonames, id, data) do
+    if offset = Map.get(geonames, id) do
+      lookup_pointer(data, offset)
+    end
+  end
 end
