@@ -2,6 +2,7 @@ defmodule M do
   @moduledoc """
   Documentation for `M`.
   """
+  @compile {:bin_opt_info, true}
 
   def load_mmdb(path \\ "priv/GeoIP2-City-Test.mmdb") do
     with {:ok, data} <- File.read(path) do
@@ -121,8 +122,7 @@ defmodule M do
 
   def lookup_pointer(data, offset) when byte_size(data) > offset and offset >= 0 do
     <<_::size(offset)-bytes, rest::bytes>> = data
-    {value, _rest} = decode(rest, data)
-    value
+    decode(rest, [], data)
   end
 
   def lookup_pointer(_, _), do: nil
@@ -145,104 +145,132 @@ defmodule M do
   @u64 2
   @u128 3
 
-  defp decode(<<@binary::3, 0::5, rest::bytes>>, _) do
-    {"", rest}
+  defp decode(<<@binary::3, 0::5, rest::bytes>>, plan, data) do
+    decode_cont(rest, "", plan, data)
   end
 
-  defp decode(<<@binary::3, 29::5, len::8, rest::bytes>>, _) do
-    decode_binary(rest, 29 + len)
+  defp decode(<<@binary::3, 29::5, len::8, value::size(len + 29)-bytes, rest::bytes>>, plan, data) do
+    decode_cont(rest, value, plan, data)
   end
 
-  defp decode(<<@binary::3, 30::5, len::16, rest::bytes>>, _) do
-    decode_binary(rest, 285 + len)
+  defp decode(
+         <<@binary::3, 30::5, len::16, value::size(len + 285)-bytes, rest::bytes>>,
+         plan,
+         data
+       ) do
+    decode_cont(rest, value, plan, data)
   end
 
-  defp decode(<<@binary::3, 31::5, len::24, rest::bytes>>, _) do
-    decode_binary(rest, 65_821 + len)
+  defp decode(
+         <<@binary::3, 31::5, len::24, value::size(len + 65_821)-bytes, rest::bytes>>,
+         plan,
+         data
+       ) do
+    decode_cont(rest, value, plan, data)
   end
 
-  defp decode(<<@binary::3, len::5, rest::bytes>>, _) do
-    decode_binary(rest, len)
+  defp decode(<<@binary::3, len::5, value::size(len)-bytes, rest::bytes>>, plan, data) do
+    decode_cont(rest, value, plan, data)
   end
 
-  defp decode(<<@bytes::3, 0::5, rest::bytes>>, _) do
-    {"", rest}
+  defp decode(<<@bytes::3, 0::5, rest::bytes>>, plan, data) do
+    decode_cont(rest, "", plan, data)
   end
 
-  defp decode(<<@bytes::3, 29::5, len::8, rest::bytes>>, _) do
-    decode_binary(rest, 29 + len)
+  defp decode(<<@bytes::3, 29::5, len::8, value::size(len + 29)-bytes, rest::bytes>>, plan, data) do
+    decode_cont(rest, value, plan, data)
   end
 
-  defp decode(<<@bytes::3, 30::5, len::16, rest::bytes>>, _) do
-    decode_binary(rest, 285 + len)
+  defp decode(
+         <<@bytes::3, 30::5, len::16, value::size(len + 285)-bytes, rest::bytes>>,
+         plan,
+         data
+       ) do
+    decode_cont(rest, value, plan, data)
   end
 
-  defp decode(<<@bytes::3, 31::5, len::24, rest::bytes>>, _) do
-    decode_binary(rest, 65_821 + len)
+  defp decode(
+         <<@bytes::3, 31::5, len::24, value::size(len + 65_821)-bytes, rest::bytes>>,
+         plan,
+         data
+       ) do
+    decode_cont(rest, value, plan, data)
   end
 
-  defp decode(<<@bytes::3, len::5, rest::bytes>>, _) do
-    decode_binary(rest, len)
+  defp decode(<<@bytes::3, len::5, value::size(len)-bytes, rest::bytes>>, plan, data) do
+    decode_cont(rest, value, plan, data)
   end
 
-  defp decode(<<@double::3, 8::5, value::64-float, rest::bytes>>, _) do
-    {value, rest}
+  defp decode(<<@double::3, 8::5, value::64-float, rest::bytes>>, plan, data) do
+    decode_cont(rest, value, plan, data)
   end
 
-  defp decode(<<@double::3, 8::5, value::64, rest::bytes>>, _) do
-    {:erlang.float(value), rest}
+  defp decode(<<@double::3, 8::5, value::64, rest::bytes>>, plan, data) do
+    decode_cont(rest, :erlang.float(value), plan, data)
   end
 
-  defp decode(<<@extended::3, 29::5, len, @array, rest::bytes>>, data) do
-    decode_array(rest, data, 28 + len, [])
+  defp decode(<<@extended::3, 29::5, len, @array, rest::bytes>>, plan, data) do
+    decode_array(rest, data, 28 + len, [], plan, data)
   end
 
-  defp decode(<<@extended::3, 30::5, len::16, @array, rest::bytes>>, data) do
-    decode_array(rest, data, 285 + len, [])
+  defp decode(<<@extended::3, 30::5, len::16, @array, rest::bytes>>, plan, data) do
+    decode_array(rest, data, 285 + len, [], plan, data)
   end
 
-  defp decode(<<@extended::3, 31::5, len::24, @array, rest::bytes>>, data) do
-    decode_array(rest, data, 65_821 + len, [])
+  defp decode(<<@extended::3, 31::5, len::24, @array, rest::bytes>>, plan, data) do
+    decode_array(rest, data, 65_821 + len, [], plan, data)
   end
 
-  defp decode(<<@extended::3, len::5, @array, rest::bytes>>, data) do
-    decode_array(rest, data, len, [])
+  defp decode(<<@extended::3, len::5, @array, rest::bytes>>, plan, data) do
+    decode_array(rest, data, len, [], plan, data)
   end
 
-  defp decode(<<@extended::3, 0::5, @boolean, rest::bytes>>, _) do
-    {false, rest}
+  defp decode(<<@extended::3, 0::5, @boolean, rest::bytes>>, plan, data) do
+    decode_cont(rest, false, plan, data)
   end
 
-  defp decode(<<@extended::3, 1::5, @boolean, rest::bytes>>, _) do
-    {true, rest}
+  defp decode(<<@extended::3, 1::5, @boolean, rest::bytes>>, plan, data) do
+    decode_cont(rest, true, plan, data)
   end
 
-  defp decode(<<@extended::3, _::5, @cache_container, rest::bytes>>, _) do
-    {:cache_container, rest}
+  defp decode(<<@extended::3, _::5, @cache_container, rest::bytes>>, plan, data) do
+    decode_cont(rest, :cache_container, plan, data)
   end
 
-  defp decode(<<@extended::3, 0::5, @end_marker, rest::bytes>>, _) do
-    {:end_marker, rest}
+  defp decode(<<@extended::3, 0::5, @end_marker, rest::bytes>>, plan, data) do
+    decode_cont(rest, :end_marker, plan, data)
   end
 
-  defp decode(<<@extended::3, 4::5, @float, value::32-float, rest::bytes>>, _) do
-    {value, rest}
+  defp decode(<<@extended::3, 4::5, @float, value::32-float, rest::bytes>>, plan, data) do
+    decode_cont(rest, value, plan, data)
   end
 
-  defp decode(<<@extended::3, 4::5, @float, value::32, rest::bytes>>, _) do
-    {:erlang.float(value), rest}
+  defp decode(<<@extended::3, 4::5, @float, value::32, rest::bytes>>, plan, data) do
+    decode_cont(rest, :erlang.float(value), plan, data)
   end
 
-  defp decode(<<@extended::3, len::5, @i32, rest::bytes>>, _) do
-    decode_signed(rest, len * 8)
+  defp decode(
+         <<@extended::3, len::5, @i32, value::size(len * 8)-integer-signed, rest::bytes>>,
+         plan,
+         data
+       ) do
+    decode_cont(rest, value, plan, data)
   end
 
-  defp decode(<<@extended::3, len::5, @u64, rest::bytes>>, _) do
-    decode_unsigned(rest, len * 8)
+  defp decode(
+         <<@extended::3, len::5, @u64, value::size(len * 8)-integer, rest::bytes>>,
+         plan,
+         data
+       ) do
+    decode_cont(rest, value, plan, data)
   end
 
-  defp decode(<<@extended::3, len::5, @u128, rest::bytes>>, _) do
-    decode_unsigned(rest, len * 8)
+  defp decode(
+         <<@extended::3, len::5, @u128, value::size(len * 8)-integer, rest::bytes>>,
+         plan,
+         data
+       ) do
+    decode_cont(rest, value, plan, data)
   end
 
   defp decode(<<@map::3, 29::5, len, rest::bytes>>, data) do
@@ -294,11 +322,6 @@ defmodule M do
     decode_array(rest, data, size - 1, [value | acc])
   end
 
-  defp decode_binary(rest, len) do
-    <<value::size(len)-bytes, rest::bytes>> = rest
-    {value, rest}
-  end
-
   defp decode_map(rest, _, 0, acc) do
     {Map.new(acc), rest}
   end
@@ -307,16 +330,6 @@ defmodule M do
     {key, rest} = decode(rest, data)
     {value, rest} = decode(rest, data)
     decode_map(rest, data, size - 1, [{key, value} | acc])
-  end
-
-  defp decode_signed(rest, size) do
-    <<value::size(size)-signed-integer, rest::bytes>> = rest
-    {value, rest}
-  end
-
-  defp decode_unsigned(rest, size) do
-    <<value::size(size)-integer-unsigned, rest::bytes>> = rest
-    {value, rest}
   end
 
   require Logger
